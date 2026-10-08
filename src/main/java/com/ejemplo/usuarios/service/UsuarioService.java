@@ -1,12 +1,8 @@
 package com.ejemplo.usuarios.service;
 
-import com.ejemplo.usuarios.dto.RegisterRequest;
-import com.ejemplo.usuarios.dto.UpdateUsuarioRequest;
-import com.ejemplo.usuarios.entity.EstadoUsuario;
+import com.ejemplo.usuarios.dto.*;
 import com.ejemplo.usuarios.entity.Usuario;
-import com.ejemplo.usuarios.exception.CredencialesInvalidasException;
-import com.ejemplo.usuarios.exception.EmailYaExisteException;
-import com.ejemplo.usuarios.exception.UsuarioNoEncontradoException;
+import com.ejemplo.usuarios.exception.*;
 import com.ejemplo.usuarios.repository.UsuarioRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,59 +15,66 @@ public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
 
+    // Inyección de dependencias por constructor
     public UsuarioService(UsuarioRepository usuarioRepository, PasswordEncoder passwordEncoder) {
         this.usuarioRepository = usuarioRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
-    public Usuario registrar(RegisterRequest request) {
-        if (usuarioRepository.existsByEmail(request.getEmail())) {
-            throw new EmailYaExisteException(request.getEmail());
+    public UserResponse registrar(RegisterRequest request) {
+        if (usuarioRepository.existsByEmail(request.email())) {
+            throw new UserAlreadyExistsException("El email '" + request.email() + "' ya está registrado.");
         }
 
-        String passwordHasheado = passwordEncoder.encode(request.getPassword());
-        Usuario usuario = new Usuario(request.getNombre(), request.getEmail(), passwordHasheado);
-        return usuarioRepository.save(usuario);
+        String passwordHash = passwordEncoder.encode(request.password());
+        Usuario nuevoUsuario = new Usuario(request.nombre(), request.email(), passwordHash, "ACTIVO");
+
+        return UserResponse.fromEntity(usuarioRepository.save(nuevoUsuario));
     }
 
-    public Usuario login(String email, String password) {
-        Usuario usuario = usuarioRepository.findByEmail(email)
-                .orElseThrow(CredencialesInvalidasException::new);
+    public UserResponse autenticar(LoginRequest request) {
+        Usuario usuario = usuarioRepository.findByEmail(request.email())
+                .orElseThrow(() -> new InvalidCredentialsException("Credenciales inválidas"));
 
-        if (!passwordEncoder.matches(password, usuario.getPassword())) {
-            throw new CredencialesInvalidasException();
+        if (!passwordEncoder.matches(request.password(), usuario.getPassword())) {
+            throw new InvalidCredentialsException("Credenciales inválidas");
         }
 
-        return usuario;
+        return UserResponse.fromEntity(usuario);
     }
 
-    public List<Usuario> listarTodos() {
-        return usuarioRepository.findAll();
+    public List<UserResponse> obtenerTodos() {
+        return usuarioRepository.findAll()
+                .stream()
+                .map(UserResponse::fromEntity)
+                .toList();
     }
 
-    public Usuario obtenerPorId(Long id) {
-        return usuarioRepository.findById(id)
-                .orElseThrow(() -> new UsuarioNoEncontradoException(id));
+    public UserResponse obtenerPorId(Long id) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado con ID: " + id));
+        return UserResponse.fromEntity(usuario);
     }
 
-    public Usuario actualizar(Long id, UpdateUsuarioRequest request) {
-        Usuario usuario = obtenerPorId(id);
+    public UserResponse actualizar(Long id, UpdateUserRequest request) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado con ID: " + id));
 
-        // Si cambia el email, validar que el nuevo no este en uso por otro usuario
-        if (!usuario.getEmail().equalsIgnoreCase(request.getEmail())
-                && usuarioRepository.existsByEmail(request.getEmail())) {
-            throw new EmailYaExisteException(request.getEmail());
+        if (!usuario.getEmail().equalsIgnoreCase(request.email()) && usuarioRepository.existsByEmail(request.email())) {
+            throw new UserAlreadyExistsException("El email '" + request.email() + "' ya está registrado por otro usuario.");
         }
 
-        usuario.setNombre(request.getNombre());
-        usuario.setEmail(request.getEmail());
-        return usuarioRepository.save(usuario);
+        usuario.setNombre(request.nombre());
+        usuario.setEmail(request.email());
+
+        return UserResponse.fromEntity(usuarioRepository.save(usuario));
     }
 
-    // Se desactiva la cuenta en vez de borrarla fisicamente (soft delete)
-    public void eliminar(Long id) {
-        Usuario usuario = obtenerPorId(id);
-        usuario.setEstado(EstadoUsuario.INACTIVO);
+    public void desactivar(Long id) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado con ID: " + id));
+
+        usuario.setEstado("INACTIVO");
         usuarioRepository.save(usuario);
     }
 }

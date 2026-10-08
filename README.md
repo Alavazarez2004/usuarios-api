@@ -1,3 +1,4 @@
+Requisitos: JDK 25+ y Maven (o usa el wrapper `mvnw` si lo agregas desde tu IDE).
 # API de Gestión de Usuarios y Autenticación Básica — Spring Boot
 
 Proyecto de la Unidad 1: API CRUD en Spring Boot. Implementa registro, login y
